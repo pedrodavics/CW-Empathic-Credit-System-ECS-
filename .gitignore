@@ -1,0 +1,10 @@
+/backend/node_modules
+/frontend/node_modules
+npm-debug.log
+.dockerignore
+docker-compose.yml
+/frontend/build
+/frontend/dist
+.vscode/
+*.swp
+*.cache
