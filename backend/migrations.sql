@@ -3,5 +3,6 @@ CREATE TABLE users (
     name VARCHAR(100),
     transaction_history JSONB,
     credit_limit NUMERIC,
-    emotional_data JSONB
+    emotional_data JSONB,
+    risk_score NUMERIC
 );
