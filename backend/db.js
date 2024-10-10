@@ -7,7 +7,7 @@ const pool = new Pool({
     port: 5432,
 });
 
-const updateCreditLimitAndRisk async (userID, CreditLimit, riskScore) => {
+const updateCreditLimitAndRisk = async (userId, creditLimit, riskScore) => {
     try {
         await pool.query('UPDATE users SET risk_score = $1, credit_limit = $2 WHERE id = $3', [riskScore, creditLimit, userId]);
     } catch (error) {

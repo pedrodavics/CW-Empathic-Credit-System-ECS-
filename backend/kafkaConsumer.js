@@ -1,4 +1,4 @@
-const { kafka } = require('kafkajs');
+const { Kafka } = require('kafkajs');
 
 const kafka = new Kafka({
     clientID: 'empathic-credit-system',

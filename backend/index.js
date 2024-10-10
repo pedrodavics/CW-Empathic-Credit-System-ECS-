@@ -6,15 +6,17 @@ const { getCreditRiskScore } = require('./mlModel');
 const pool = require('./db');
 
 app.use(express.json());
-
+// Root route for basic health check
 app.get('/', (req, res) => {
     res.send('Empathic Credit System API is running');
 });
-
+// Basic auth middleware
 const authMiddleware = (req, res, next) => {
     const auth = { login: 'admin', password: 'secret' };
     const b64auth = (req.headers.authorization || '').split(' ')[1] || '';
     const [login, password] = Buffer.from(b64auth, 'base64').toString().split(':');
+
+    // Check if credentials match
     if (login && password && login === auth.login && password === auth.password) {
         return next();
     }
@@ -24,50 +26,86 @@ const authMiddleware = (req, res, next) => {
 
 app.use(authMiddleware);
 
-// mock
+// Mock function to calculate credit limit based on emotional and financial data
 function calculateCreditLimit(emotionalState, financialThoughts) {
     const riskScore = getCreditRiskScore({ emotionalState, financialThoughts });
     const baseLimit = 10000;
-    const adjustedLimit = baseLimit - riskScore * 100;
-    return Math.floor(adjustedLimit);
+    const riskAdjustmentFactor = 100;
+    const adjustedLimit = baseLimit - (riskScore * riskAdjustmentFactor)
+
+    return Math.max(Math.floor(adjustedLimit), 0);
 }
-// calcule limit credit endpoint
+
+// Endpoint to calculate and update the credit limit
 app.post('/credit-limit', async (req, res) => {
     try {
-        const { emotionalState, financialThoughts } = req.body;
+        const { emotionalState, financialThoughts, userId } = req.body;
         const creditLimit = calculateCreditLimit(emotionalState, financialThoughts);
         const riskScore = getCreditRiskScore({ emotionalState, financialThoughts });
 
+        // Update user data with the new risk score and credit limit in the database
         await pool.query('UPDATE users SET risk_score = $1, credit_limit = $2 WHERE id = $3', [riskScore, creditLimit, userId]);
-
         res.json({ creditLimit });
     } catch (err) {
         console.error('Error calculating credit limit:', err);
         res.status(500).json({ error: 'internal server error' });
     }
 });
-// Kafka consumer configuration
+// Kafka consumer configuration to listen to "emotional-data" topic
 const kafka = new Kafka({
     clientId: 'ecs-backend',
     brokers: ['localhost:9092']
 });
 
-const consumer = kafka.consumer({ groupId: 'ecs-group' });
+let consumer;
 
-const runConsumer = async () => {
-    await consumer.connect();
-    await consumer.subscribe({ topic: 'emotional-data', fromBeginning: true });
+// Start the Kafka consumer
+const startConsumer = async () => {
+    try {
+        consumer = kafka.consumer({ groupId: 'ecs-group' });
+        await consumer.subscribe({ topic: 'emotional-data', fromBeginning: true });
 
-    await consumer.run({
-        eachMessage: async ({ topic, partition, message }) => {
-            const emotionalData = message.value.toString();
-            console.log(`Received message: $(emotionalData)`);
-        },
-    });
+        // Listen for new messages from Kafka
+        await consumer.run({
+            eachMessage: async ({ topic, partition, message }) => {
+                console.log(`Received message: ${message.value}`);
+                // Process the message...
+            },
+        });
+        console.log('Kafka consumer started');
+    } catch (err) {
+        console.error('Error starting Kafka consumer', err);
+    }
 };
 
-runConsumer().catch(console.error);
+// Stop the Kafka consumer
+const stopConsumer = async () => {
+    if (consumer) {
+        try {
+            await consumer.disconnect();
+            console.log('Kafka consumer disconnected');
+        } catch (err) {
+            console.error('Error disconnecting Kafka consumer', err);
+        }
+    }
+};
 
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+// Start the Kafka consumer
+if (process.env.NODE_ENV !== 'test') {
+    startConsumer().catch(console.error);
+}
+
+// Disconnect the consumer when the process exits
+process.on('beforeExit', async () => {
+    await stopConsumer();
 });
+
+// Start the Express server
+if (process.env.NODE_ENV !== 'test') {
+    app.listen(PORT, () => {
+        console.log(`Server is running on port ${PORT}`);
+    });
+}
+
+// Export the app and functions for testing
+module.exports = { app, calculateCreditLimit, startConsumer, stopConsumer };
