@@ -2,21 +2,31 @@ const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const { Kafka } = require('kafkajs');
-const { getCreditRiskScore } = require('./mlModel');
 const pool = require('./db');
 
 app.use(express.json());
-// Root route for basic health check
+
 app.get('/', (req, res) => {
     res.send('Empathic Credit System API is running');
 });
-// Basic auth middleware
+
+app.get('/transactions/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const transactions = await pool.query('SELECT * FROM transactions WHERE user_id = $1', [userId]);
+
+        res.json(transactions.rows);
+    } catch (err) {
+        console.error('Error fetching transactions:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 const authMiddleware = (req, res, next) => {
     const auth = { login: 'admin', password: 'secret' };
     const b64auth = (req.headers.authorization || '').split(' ')[1] || '';
     const [login, password] = Buffer.from(b64auth, 'base64').toString().split(':');
 
-    // Check if credentials match
     if (login && password && login === auth.login && password === auth.password) {
         return next();
     }
@@ -26,32 +36,72 @@ const authMiddleware = (req, res, next) => {
 
 app.use(authMiddleware);
 
-// Mock function to calculate credit limit based on emotional and financial data
-function calculateCreditLimit(emotionalState, financialThoughts) {
-    const riskScore = getCreditRiskScore({ emotionalState, financialThoughts });
-    const baseLimit = 10000;
-    const riskAdjustmentFactor = 100;
-    const adjustedLimit = baseLimit - (riskScore * riskAdjustmentFactor)
+function calculateCreditLimit(userProfile) {
+    const { emotionalState, financialThoughts, income, transactionHistory = [], creditHistoryScore } = userProfile;
+    const riskScore = getCreditRiskScore(userProfile);
 
+    const baseLimit = 12000;
+    const riskAdjustmentFactor = 25;
+    const lastTransactionAmount = transactionHistory.length > 0 ? transactionHistory[transactionHistory.length - 1].amount : 0;
+
+    const adjustedLimit = baseLimit - (riskScore * riskAdjustmentFactor) - (lastTransactionAmount * 0.001);
+    
     return Math.max(Math.floor(adjustedLimit), 0);
 }
 
-// Endpoint to calculate and update the credit limit
+function getCreditRiskScore(features) {
+    const { emotionalState, financialThoughts, income, creditHistoryScore } = features;
+
+    let baseScore = Math.random() * 100;
+
+    if (emotionalState === 'anxious') baseScore -= 10;
+    if (financialThoughts === 'neutral') baseScore += 5;
+    if (income < 3000) baseScore -= 20;
+    if (creditHistoryScore < 600) baseScore -= 30;
+
+    return Math.max(0, Math.min(Math.floor(baseScore), 100));
+}
+
+// Mock sendNotification function for testing
+const sendNotification = (userId, message) => {
+    console.log(`Notification to user ${userId}: ${message}`);
+};
+
 app.post('/credit-limit', async (req, res) => {
     try {
-        const { emotionalState, financialThoughts, userId } = req.body;
-        const creditLimit = calculateCreditLimit(emotionalState, financialThoughts);
-        const riskScore = getCreditRiskScore({ emotionalState, financialThoughts });
+        const { emotionalState, financialThoughts, income, userId, transactionAmount, transactionDescription, creditHistoryScore } = req.body;
 
-        // Update user data with the new risk score and credit limit in the database
-        await pool.query('UPDATE users SET risk_score = $1, credit_limit = $2 WHERE id = $3', [riskScore, creditLimit, userId]);
+        const userProfile = {
+            emotionalState,
+            financialThoughts,
+            income,
+            transactionHistory: [{ amount: transactionAmount }],
+            creditHistoryScore
+        };
+
+        const creditLimit = calculateCreditLimit(userProfile);
+        const riskScore = getCreditRiskScore(userProfile);
+
+        await pool.query(
+            'UPDATE users SET risk_score = $1, credit_limit = $2 WHERE id = $3',
+            [riskScore, creditLimit, userId]
+        );
+
+        await pool.query(
+            'INSERT INTO transactions (user_id, amount, description) VALUES ($1, $2, $3)',
+            [userId, transactionAmount, transactionDescription]
+        );
+
+        // Send notification
+        sendNotification(userId, `Your new credit limit is: ${creditLimit}`);
+
         res.json({ creditLimit });
     } catch (err) {
         console.error('Error calculating credit limit:', err);
-        res.status(500).json({ error: 'internal server error' });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
-// Kafka consumer configuration to listen to "emotional-data" topic
+
 const kafka = new Kafka({
     clientId: 'ecs-backend',
     brokers: ['localhost:9092']
@@ -59,17 +109,14 @@ const kafka = new Kafka({
 
 let consumer;
 
-// Start the Kafka consumer
 const startConsumer = async () => {
     try {
         consumer = kafka.consumer({ groupId: 'ecs-group' });
         await consumer.subscribe({ topic: 'emotional-data', fromBeginning: true });
 
-        // Listen for new messages from Kafka
         await consumer.run({
             eachMessage: async ({ topic, partition, message }) => {
                 console.log(`Received message: ${message.value}`);
-                // Process the message...
             },
         });
         console.log('Kafka consumer started');
@@ -78,7 +125,6 @@ const startConsumer = async () => {
     }
 };
 
-// Stop the Kafka consumer
 const stopConsumer = async () => {
     if (consumer) {
         try {
@@ -90,17 +136,14 @@ const stopConsumer = async () => {
     }
 };
 
-// Start the Kafka consumer
 if (process.env.NODE_ENV !== 'test') {
     startConsumer().catch(console.error);
 }
 
-// Disconnect the consumer when the process exits
 process.on('beforeExit', async () => {
     await stopConsumer();
 });
 
-// Start the Express server
 if (process.env.NODE_ENV !== 'test') {
     app.listen(PORT, () => {
         console.log(`Server is running on port ${PORT}`);
@@ -108,4 +151,4 @@ if (process.env.NODE_ENV !== 'test') {
 }
 
 // Export the app and functions for testing
-module.exports = { app, calculateCreditLimit, startConsumer, stopConsumer };
+module.exports = { app, calculateCreditLimit, sendNotification, startConsumer, stopConsumer };

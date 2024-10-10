@@ -16,7 +16,19 @@ const updateCreditLimitAndRisk = async (userId, creditLimit, riskScore) => {
     }
 };
 
+const getUserTransactions = async (userId) => {
+    try {
+        const result = await pool.query('SELECT * FROM transactions WHERE user_id = $1', [userId]);
+        return result.rows;
+    } catch (error) {
+        console.error('Error fetching transactions:', error);
+        throw error;
+    }
+};
+
+
 module.exports = {
     pool,
     updateCreditLimitAndRisk,
+    getUserTransactions,
 };
