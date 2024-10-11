@@ -3,12 +3,21 @@ function getCreditRiskScore(features) {
 
     let baseScore = Math.random() * 100;
 
-    // Ajuste do score baseado nos features (para fins de demonstração)
-    if (emotionalState === 'anxious') baseScore -= 10;
-    if (financialThoughts === 'neutral') baseScore += 5;
-    if (income < 3000) baseScore -= 20;
-    if (creditHistoryScore < 600) baseScore -= 30;
+    // Adjust score based on user features
+    if (emotionalState === 'anxious') {
+        baseScore -= 10;
+    }
+    if (financialThoughts === 'neutral') {
+        baseScore += 5;
+    }
+    if (income < 3000) {
+        baseScore -= 20;
+    }
+    if (creditHistoryScore < 600) {
+        baseScore -= 30;
+    }
 
+    // Ensure score is between 0 and 100
     return Math.max(0, Math.min(Math.floor(baseScore), 100));
 }
 

@@ -30,6 +30,7 @@ describe('Kafka Consumer', () => {
     });
 
     it('should run the consumer without errors', async () => {
+        // Simulating Kafka consumer behavior
         await consumer.connect();
         await consumer.subscribe({ topic: 'emotional-data', fromBeginning: true });
         await consumer.run({
@@ -38,6 +39,7 @@ describe('Kafka Consumer', () => {
             },
         });
 
+        // Expectations for the mock functions
         expect(consumer.connect).toHaveBeenCalled();
         expect(consumer.subscribe).toHaveBeenCalledWith({ topic: 'emotional-data', fromBeginning: true });
         expect(consumer.run).toHaveBeenCalled();

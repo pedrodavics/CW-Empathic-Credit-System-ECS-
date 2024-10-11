@@ -1,26 +1,12 @@
 const express = require('express');
-const app = express();
-const PORT = process.env.PORT || 3000;
 const { Kafka } = require('kafkajs');
 const pool = require('./db');
 
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Middlewares
 app.use(express.json());
-
-app.get('/', (req, res) => {
-    res.send('Empathic Credit System API is running');
-});
-
-app.get('/transactions/:userId', async (req, res) => {
-    try {
-        const { userId } = req.params;
-        const transactions = await pool.query('SELECT * FROM transactions WHERE user_id = $1', [userId]);
-
-        res.json(transactions.rows);
-    } catch (err) {
-        console.error('Error fetching transactions:', err);
-        res.status(500).json({ error: 'Internal server error' });
-    }
-});
 
 const authMiddleware = (req, res, next) => {
     const auth = { login: 'admin', password: 'secret' };
@@ -30,42 +16,28 @@ const authMiddleware = (req, res, next) => {
     if (login && password && login === auth.login && password === auth.password) {
         return next();
     }
+
     res.set('WWW.Authenticate', 'Basic realm="401"');
     res.status(401).send('Authentication required.');
 };
 
 app.use(authMiddleware);
 
-function calculateCreditLimit(userProfile) {
-    const { emotionalState, financialThoughts, income, transactionHistory = [], creditHistoryScore } = userProfile;
-    const riskScore = getCreditRiskScore(userProfile);
+// Routes
+app.get('/', (req, res) => {
+    res.send('Empathic Credit System API is running');
+});
 
-    const baseLimit = 12000;
-    const riskAdjustmentFactor = 25;
-    const lastTransactionAmount = transactionHistory.length > 0 ? transactionHistory[transactionHistory.length - 1].amount : 0;
-
-    const adjustedLimit = baseLimit - (riskScore * riskAdjustmentFactor) - (lastTransactionAmount * 0.001);
-    
-    return Math.max(Math.floor(adjustedLimit), 0);
-}
-
-function getCreditRiskScore(features) {
-    const { emotionalState, financialThoughts, income, creditHistoryScore } = features;
-
-    let baseScore = Math.random() * 100;
-
-    if (emotionalState === 'anxious') baseScore -= 10;
-    if (financialThoughts === 'neutral') baseScore += 5;
-    if (income < 3000) baseScore -= 20;
-    if (creditHistoryScore < 600) baseScore -= 30;
-
-    return Math.max(0, Math.min(Math.floor(baseScore), 100));
-}
-
-// Mock sendNotification function for testing
-const sendNotification = (userId, message) => {
-    console.log(`Notification to user ${userId}: ${message}`);
-};
+app.get('/transactions/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const transactions = await pool.query('SELECT * FROM transactions WHERE user_id = $1', [userId]);
+        res.json(transactions.rows);
+    } catch (err) {
+        console.error('Error fetching transactions:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
 
 app.post('/credit-limit', async (req, res) => {
     try {
@@ -92,9 +64,7 @@ app.post('/credit-limit', async (req, res) => {
             [userId, transactionAmount, transactionDescription]
         );
 
-        // Send notification
         sendNotification(userId, `Your new credit limit is: ${creditLimit}`);
-
         res.json({ creditLimit });
     } catch (err) {
         console.error('Error calculating credit limit:', err);
@@ -102,6 +72,39 @@ app.post('/credit-limit', async (req, res) => {
     }
 });
 
+// Helper functions
+function calculateCreditLimit(userProfile) {
+    const { emotionalState, financialThoughts, income, transactionHistory = [], creditHistoryScore } = userProfile;
+    const riskScore = getCreditRiskScore(userProfile);
+
+    const baseLimit = 15000;
+    const riskAdjustmentFactor = 100;
+    const lastTransactionAmount = transactionHistory.length > 0 ? transactionHistory[transactionHistory.length - 1].amount : 0;
+    const transactionImpact = lastTransactionAmount * 0.002;
+
+    let adjustedLimit = baseLimit - (riskScore * riskAdjustmentFactor) - transactionImpact;
+    adjustedLimit = Math.max(500, Math.min(adjustedLimit, 15000));
+
+    return Math.floor(adjustedLimit);
+}
+
+function getCreditRiskScore(features) {
+    const { emotionalState, financialThoughts, income, creditHistoryScore } = features;
+
+    let baseScore = Math.random() * 100;
+    if (emotionalState === 'anxious') baseScore -= 10;
+    if (financialThoughts === 'neutral') baseScore += 5;
+    if (income < 3000) baseScore -= 20;
+    if (creditHistoryScore < 600) baseScore -= 30;
+
+    return Math.max(0, Math.min(Math.floor(baseScore), 100));
+}
+
+const sendNotification = (userId, message) => {
+    console.log(`Notification to user ${userId}: ${message}`);
+};
+
+// Kafka Consumer
 const kafka = new Kafka({
     clientId: 'ecs-backend',
     brokers: ['localhost:9092']
@@ -136,19 +139,18 @@ const stopConsumer = async () => {
     }
 };
 
+// Start server and Kafka consumer
 if (process.env.NODE_ENV !== 'test') {
     startConsumer().catch(console.error);
-}
-
-process.on('beforeExit', async () => {
-    await stopConsumer();
-});
-
-if (process.env.NODE_ENV !== 'test') {
     app.listen(PORT, () => {
         console.log(`Server is running on port ${PORT}`);
     });
 }
 
-// Export the app and functions for testing
+// Cleanup before exit
+process.on('beforeExit', async () => {
+    await stopConsumer();
+});
+
+// Export app and functions for testing
 module.exports = { app, calculateCreditLimit, sendNotification, startConsumer, stopConsumer };

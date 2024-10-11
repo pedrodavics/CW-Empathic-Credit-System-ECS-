@@ -11,6 +11,7 @@ describe('getCreditRiskScore', () => {
 
         const riskScore = getCreditRiskScore(features);
 
+        // Check if the result is a number and within the expected range
         expect(typeof riskScore).toBe('number');
         expect(riskScore).toBeGreaterThanOrEqual(0);
         expect(riskScore).toBeLessThanOrEqual(100);
