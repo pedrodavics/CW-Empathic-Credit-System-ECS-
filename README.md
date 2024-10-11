@@ -4,6 +4,9 @@
 
 ![ECS Diagram](docs/ECS%20diagram.png)
 
+### System Architecture Diagram
+The diagram above illustrates the architecture of the Empathetic Credit System. It highlights how Kafka handles real-time emotional data, which is processed and stored in PostgreSQL. The API interacts with this data to calculate credit limits, leveraging the machine learning model for risk scoring.
+
 ## Features
 - **Kafka Consumer:** Processes users' emotional and thought data in real time.
 - **Database:** Stores user profiles, transaction history, credit limits, and aggregated emotional data.
@@ -23,6 +26,8 @@ Before running this project, make sure you have the following installed:
 
 - Node.js v20.16.0 or higher
 - npm version 10.8.2 or higher
+- Docker v24.0.5 or higher
+- Docker Compose v2.18.1 or higher
 
 ### Follow these steps to set up and run the project:
 > 1. Clone the repository:
@@ -52,12 +57,16 @@ KAFKA_BROKER=kafka:9092
 ```bash
 docker-compose up
 ```  
-> 4. Run the project locally:
+> 4. Run the database migrations:
+```bash
+npm run migrate
+``` 
+> 5. Run the project locally:
 ```bash
 npm install
 npm start
-``` 
-> 5. To run the tests:
+```
+> 6. To run the tests:
 ```bash
 npm test
 ``` 
